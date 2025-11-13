@@ -4,6 +4,11 @@ const Papa = require('papaparse');
 const cors = require('cors');
 const fetch = require('node-fetch');
 const path = require('path');
+const fs = require('fs');
+
+// Cache settings
+const CACHE_FILE = path.join(__dirname, 'catalogs_cache.json');
+const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 horas
 
 const app = express();
 app.use(cors());
@@ -23,8 +28,22 @@ function normalizeList(arr){
 
 app.get('/api/catalogs', async (req, res) => {
   try{
-    const r = await fetch(CAT_URL_ZIP);
-    if(!r.ok) return res.status(502).json({error:'failed to fetch remote zip'});
+    // Serve from cache when recent
+    if(fs.existsSync(CACHE_FILE)){
+      const st = fs.statSync(CACHE_FILE);
+      const age = Date.now() - st.mtimeMs;
+      if(age < CACHE_TTL_MS){
+        const cached = JSON.parse(fs.readFileSync(CACHE_FILE,'utf8'));
+        return res.json(cached);
+      }
+    }
+
+    // Use AbortController to set timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(()=>controller.abort(), 15000);
+    const r = await fetch(CAT_URL_ZIP, {signal: controller.signal});
+    clearTimeout(timeoutId);
+    if(!r.ok) return res.status(502).json({error:'failed to fetch remote zip', status:r.status});
     const buffer = await r.arrayBuffer();
     const zip = await JSZip.loadAsync(Buffer.from(buffer));
     const files = Object.keys(zip.files);
@@ -37,10 +56,16 @@ app.get('/api/catalogs', async (req, res) => {
     const parsedProd = Papa.parse(csvProd, {header:true, skipEmptyLines:true});
     const actividades = normalizeList(parsedAct.data);
     const productos = normalizeList(parsedProd.data);
-    res.json({actividades, productos});
+    const out = {actividades, productos, fetchedAt: new Date().toISOString()};
+    try{ fs.writeFileSync(CACHE_FILE, JSON.stringify(out), 'utf8'); }catch(e){ console.warn('cache write failed', e.message); }
+    res.json(out);
   }catch(err){
-    console.error(err);
-    res.status(500).json({error:err.message});
+    console.error(err && err.message ? err.message : err);
+    // Fallback to cache if available
+    if(fs.existsSync(CACHE_FILE)){
+      try{ const cached = JSON.parse(fs.readFileSync(CACHE_FILE,'utf8')); return res.json(cached); }catch(e){}
+    }
+    res.status(500).json({error:err.message || String(err)});
   }
 });
 

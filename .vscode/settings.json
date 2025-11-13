@@ -1,0 +1,5 @@
+{
+    "workbench.editor.closeOnFileDelete": true,
+    "workbench.list.horizontalScrolling": true,
+    "workbench.editor.limit.excludeDirty": true
+}
