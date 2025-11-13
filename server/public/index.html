@@ -1,49 +1,224 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<title>Brindaje Fiscal – Catálogo SAT (Proxy)</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-<style>
-  body{ background:#f8f9fa; }
-  .top-bar{ background:#0d6efd; color:#fff; padding:.75rem 1rem; margin-bottom:1rem; }
-  .top-bar a{ color:#fff; text-decoration:none; }
-  #jsonOut{ max-height:300px; font-size:.85rem; }
-</style>
+  <meta charset="utf-8">
+  <title>Brindaje Fiscal – Catálogo SAT (Proxy)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+  <style>
+    body{ background:#f8f9fa; }
+    .top-bar{ background:#0d6efd; color:#fff; padding:.75rem 1rem; margin-bottom:1rem; }
+    .top-bar a{ color:#fff; text-decoration:none; }
+    #jsonOut{ max-height:300px; font-size:.85rem; }
+  </style>
 </head>
 <body>
 <div class="top-bar">
   <strong>Brindaje Fiscal – Catálogo SAT (Proxy)</strong>
+  <a class="float-end" href="/">Inicio</a>
 </div>
 
 <div class="container-fluid">
+  <!-- ALTA EMPRESA -->
   <div class="card mb-3">
-    <div class="card-header">Estado</div>
+    <div class="card-header">Alta de empresa</div>
     <div class="card-body">
-      <p id="status">Cargando catálogos...</p>
+      <div class="row mb-2">
+        <div class="col-md-4">
+          <label>RFC</label>
+          <input id="rfc" class="form-control" maxlength="13" required>
+          <div class="form-text" id="rfcStatus"></div>
+        </div>
+        <div class="col-md-8">
+          <label>Razón social</label>
+          <input id="razon" class="form-control" required>
+        </div>
+      </div>
     </div>
   </div>
-  <div id="root"></div>
+
+  <!-- ACTIVIDADES -->
+  <div class="card mb-3">
+    <div class="card-header">Actividades económicas</div>
+    <div class="card-body">
+      <input id="buscaAct" class="form-control mb-2" placeholder="Escribe para filtrar...">
+      <table id="tblActividades" class="table table-sm table-striped">
+        <thead><tr><th>Clave</th><th>Descripción</th><th><input type="checkbox" id="checkAllAct"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PRODUCTOS -->
+  <div class="card mb-3">
+    <div class="card-header">Productos/Servicios que podrá facturar</div>
+    <div class="card-body">
+      <div class="input-group mb-2">
+        <input id="buscaProd" class="form-control" placeholder="Buscar clave o concepto...">
+        <button class="btn btn-outline-primary" id="btnAddProd">+ Agregar</button>
+      </div>
+      <table id="tblProductos" class="table table-sm">
+        <thead><tr><th>Clave</th><th>Descripción</th><th>Monto máx.</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ACCIONES -->
+  <button class="btn btn-success" id="btnGuardar">Guardar empresa</button>
+  <button class="btn btn-info"   id="btnJson">Descargar JSON brindaje</button>
+  <button class="btn btn-warning" id="btnVer">Ver empresas guardadas</button>
+  <button class="btn btn-danger"  id="btnReset">Borrar datos de Brindaje (local)</button>
+
+  <!-- PREVIEW JSON -->
+  <div class="mt-3">
+    <label>Preview / Debug JSON:</label>
+    <textarea id="jsonOut" class="form-control" readonly></textarea>
+  </div>
 </div>
 
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script>
-async function init(){
-  try{
-    const res = await fetch('/api/catalogs');
-    const data = await res.json();
-    document.getElementById('status').textContent = `Catálogos cargados: ${data.actividades.length} actividades, ${data.productos.length} productos`;
-    // Simple render of counts
-    document.getElementById('root').innerHTML = `<pre>${JSON.stringify({actividades: data.actividades.length, productos: data.productos.length}, null, 2)}</pre>`;
-  }catch(e){
-    document.getElementById('status').textContent = 'Error cargando catálogos: '+e.message;
+/* ==========  UTILS  ========== */
+const LS_KEY_EMP = 'satBrindajeEmpresas';
+let actividades = [], productos = [], empresas = [];
+
+/* ==========  DESCARGA CATÁLOGOS (via proxy) ========== */
+async function descargaCatalogos(){
+  if(localStorage.getItem('satActividades') && localStorage.getItem('satProductos')) {
+    actividades = JSON.parse(localStorage.getItem('satActividades'));
+    productos   = JSON.parse(localStorage.getItem('satProductos'));
+    return;
   }
+  const res = await fetch('/api/catalogs');
+  if(!res.ok) throw new Error('Error fetching catalogs');
+  const data = await res.json();
+  actividades = data.actividades || [];
+  productos   = data.productos || [];
+  localStorage.setItem('satActividades', JSON.stringify(actividades));
+  localStorage.setItem('satProductos', JSON.stringify(productos));
 }
-init();
+
+/* ==========  INICIA TABLAS  ========== */
+$(async ()=>{
+  try{
+    $('#btnGuardar, #btnJson, #btnAddProd, #btnVer').prop('disabled', true);
+    await descargaCatalogos();
+  }catch(e){
+    alert('No fue posible cargar catálogos: '+e.message);
+    console.error(e);
+  } finally{
+    $('#btnGuardar, #btnJson, #btnAddProd, #btnVer').prop('disabled', false);
+  }
+  loadEmpresas();
+  initTables();
+  bindEvents();
+});
+
+function initTables(){
+  window.actTable = $('#tblActividades').DataTable({paging:false, autoWidth:false, data:actividades, columns:[
+    {data:'clave'}, {data:'descripcion'},
+    {data:null, orderable:false, render: d=>`<input type="checkbox" class="selAct" value="${d.clave}">`}
+  ], language:{search:""}});
+  window.prodTable= $('#tblProductos').DataTable({paging:false, autoWidth:false, data:[], columns:[
+    {data:'clave'}, {data:'descripcion'},
+    {data:null, render: d=>`<input type="number" class="form-control form-control-sm montos" data-clave="${d.clave}" placeholder="0.00" step="0.01">`},
+    {data:null, orderable:false, render:()=>`<button class="btn btn-sm btn-danger delProd">X</button>`}
+  ], language:{search:""}});
+}
+
+function debounce(fn, wait){
+  let t;
+  return function(...args){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), wait); };
+}
+
+function bindEvents(){
+  $('#buscaAct').on('keyup', debounce(()=> actTable.search($('#buscaAct').val()).draw(), 200));
+  $('#buscaProd').on('keyup', debounce(()=> prodTable.search($('#buscaProd').val()).draw(), 200));
+  $('#checkAllAct').on('change', e=> $('.selAct').prop('checked',e.target.checked));
+  $('#rfc').on('blur', validaRFC);
+  $('#btnAddProd').on('click', addProduct);
+  $('#btnGuardar').on('click', guardarEmpresa);
+  $('#btnJson').on('click', descargarJSON);
+  $('#btnVer').on('click', mostrarEmpresas);
+  $('#btnReset').on('click', ()=>{ if(confirm('Borrar solo datos de Brindaje en este navegador?')){ localStorage.removeItem(LS_KEY_EMP); localStorage.removeItem('satActividades'); localStorage.removeItem('satProductos'); location.reload(); } });
+  $('#tblProductos tbody').on('click','.delProd', e=> prodTable.row($(e.target).parents('tr')).remove().draw());
+}
+
+function addProduct(){
+  const q = $('#buscaProd').val();
+  const filtrados = productos.filter(p=>p.descripcion.toLowerCase().includes(q.toLowerCase())).slice(0,50);
+  prodTable.rows.add(filtrados).draw();
+}
+
+function validaRFC(){
+  const rfc = $('#rfc').val().trim().toUpperCase();
+  if(rfc.length<12) return;
+  $('#rfcStatus').text('Validando...');
+  fetch(`/api/valida-rfc?rfc=${encodeURIComponent(rfc)}`)
+    .then(r=>r.json())
+    .then(({ok, black})=>{
+      $('#rfcStatus').text(ok ? (black? '⚠️ En lista negra' : '✅ Válido') : '❌ No encontrado');
+    }).catch(()=> $('#rfcStatus').text('❌ Error validando'));
+}
+
+/* ==========  CRUD LOCAL  ========== */
+function guardarEmpresa(){
+  const rfc = $('#rfc').val().trim().toUpperCase();
+  const razon = $('#razon').val().trim();
+  const actividades = $('.selAct:checked').map((i,c)=>c.value).get();
+  const productosSel = [];
+  $('.montos').each((i,inp)=>{
+    const v = parseFloat(inp.value);
+    if(!isNaN(v) && v>0) productosSel.push({clave:inp.dataset.clave, monto:v});
+  });
+  if(!rfc||!razon||actividades.length===0||productosSel.length===0){alert('Completa todos los campos'); return;}
+  const idx = empresas.findIndex(e=>e.rfc===rfc);
+  const nueva = {rfc, razon, actividades, productos:productosSel};
+  if(idx>=0) empresas[idx]=nueva; else empresas.push(nueva);
+  localStorage.setItem(LS_KEY_EMP, JSON.stringify(empresas));
+  alert('Empresa guardada en navegador');
+  location.reload();
+}
+function loadEmpresas(){
+  empresas = JSON.parse(localStorage.getItem(LS_KEY_EMP)||'[]');
+}
+function mostrarEmpresas(){
+  $('#jsonOut').val(JSON.stringify(empresas, null, 2));
+}
+
+/* ==========  GENERA JSON BRINDAJE  ========== */
+async function descargarJSON(){
+  const out = {empresas:[]};
+  for(const e of empresas){
+    const resp = await fetch(`/api/valida-rfc?rfc=${encodeURIComponent(e.rfc)}`).then(r=>r.json()).catch(()=>({ok:false, black:false}));
+    const ok = resp.ok;
+    const black = resp.black;
+    out.empresas.push({
+      rfc: e.rfc,
+      razon_social: e.razon,
+      actividades: e.actividades,
+      productos_autorizados: e.productos.map(p=>{
+        const desc = productos.find(pr=>pr.clave===p.clave)?.descripcion||'';
+        return {clave:p.clave, descripcion:desc, monto_max:p.monto};
+      }),
+      rfc_valido: ok,
+      en_lista_negra: black
+    });
+  }
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'brindaje_fiscal.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  $('#jsonOut').val(JSON.stringify(out, null, 2));
+}
 </script>
+
 </body>
 </html>
