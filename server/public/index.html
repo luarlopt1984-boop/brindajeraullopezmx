@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Brindaje Fiscal – Catálogo SAT (Proxy)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<style>
+  body{ background:#f8f9fa; }
+  .top-bar{ background:#0d6efd; color:#fff; padding:.75rem 1rem; margin-bottom:1rem; }
+  .top-bar a{ color:#fff; text-decoration:none; }
+  #jsonOut{ max-height:300px; font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <strong>Brindaje Fiscal – Catálogo SAT (Proxy)</strong>
+</div>
+
+<div class="container-fluid">
+  <div class="card mb-3">
+    <div class="card-header">Estado</div>
+    <div class="card-body">
+      <p id="status">Cargando catálogos...</p>
+    </div>
+  </div>
+  <div id="root"></div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+async function init(){
+  try{
+    const res = await fetch('/api/catalogs');
+    const data = await res.json();
+    document.getElementById('status').textContent = `Catálogos cargados: ${data.actividades.length} actividades, ${data.productos.length} productos`;
+    // Simple render of counts
+    document.getElementById('root').innerHTML = `<pre>${JSON.stringify({actividades: data.actividades.length, productos: data.productos.length}, null, 2)}</pre>`;
+  }catch(e){
+    document.getElementById('status').textContent = 'Error cargando catálogos: '+e.message;
+  }
+}
+init();
+</script>
+</body>
+</html>

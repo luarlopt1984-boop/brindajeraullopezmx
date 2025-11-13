@@ -1,0 +1,16 @@
+{
+  "name": "brindajera-proxy",
+  "version": "0.1.0",
+  "description": "Proxy server for brindaje fiscal catalogs and RFC validation",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "jszip": "^3.10.1",
+    "papaparse": "^5.4.1",
+    "node-fetch": "^2.6.7"
+  }
+}
