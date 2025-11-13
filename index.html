@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Brindaje Fiscal – Catálogo SAT</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<style>
+  body{ background:#f8f9fa; }
+  .top-bar{ background:#0d6efd; color:#fff; padding:.75rem 1rem; margin-bottom:1rem; }
+  .top-bar a{ color:#fff; text-decoration:none; }
+  #jsonOut{ max-height:300px; font-size:.85rem; }
+</style>
+</head>
+<body>
+<div class="top-bar">
+  <strong>Brindaje Fiscal – Catálogo SAT (HTML puro)</strong>
+  <a class="float-end" href="https://github.com/luarlopt1984-boop/brindajeraullopezmx">Repo</a>
+</div>
+
+<div class="container-fluid">
+  <!-- ALTA EMPRESA -->
+  <div class="card mb-3">
+    <div class="card-header">Alta de empresa</div>
+    <div class="card-body">
+      <div class="row mb-2">
+        <div class="col-md-4">
+          <label>RFC</label>
+          <input id="rfc" class="form-control" maxlength="13" required>
+          <div class="form-text" id="rfcStatus"></div>
+        </div>
+        <div class="col-md-8">
+          <label>Razón social</label>
+          <input id="razon" class="form-control" required>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ACTIVIDADES -->
+  <div class="card mb-3">
+    <div class="card-header">Actividades económicas</div>
+    <div class="card-body">
+      <input id="buscaAct" class="form-control mb-2" placeholder="Escribe para filtrar...">
+      <table id="tblActividades" class="table table-sm table-striped">
+        <thead><tr><th>Clave</th><th>Descripción</th><th><input type="checkbox" id="checkAllAct"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- PRODUCTOS -->
+  <div class="card mb-3">
+    <div class="card-header">Productos/Servicios que podrá facturar</div>
+    <div class="card-body">
+      <div class="input-group mb-2">
+        <input id="buscaProd" class="form-control" placeholder="Buscar clave o concepto...">
+        <button class="btn btn-outline-primary" id="btnAddProd">+ Agregar</button>
+      </div>
+      <table id="tblProductos" class="table table-sm">
+        <thead><tr><th>Clave</th><th>Descripción</th><th>Monto máx.</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ACCIONES -->
+  <button class="btn btn-success" id="btnGuardar">Guardar empresa</button>
+  <button class="btn btn-info"   id="btnJson">Descargar JSON brindaje</button>
+  <button class="btn btn-warning" id="btnVer">Ver empresas guardadas</button>
+  <button class="btn btn-danger"  id="btnReset">Borrar todo del navegador</button>
+
+  <!-- PREVIEW JSON -->
+  <div class="mt-3">
+    <label>Preview / Debug JSON:</label>
+    <textarea id="jsonOut" class="form-control" readonly></textarea>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script>
+/* ==========  UTILS  ========== */
+const LS_KEY_EMP = 'satBrindajeEmpresas';
+const CAT_URL_ACT = 'https://www.sat.gob.mx/cs/Satellite?blobcol=urldata&blobkey=id&blobtable=MungoBlobs&blobwhere=1461173677333&ssbinary=true';
+let actividades = [], productos = [], empresas = [];
+
+/* ==========  DESCARGA CATÁLOGOS  ========== */
+async function descargaZIP(){
+  if(localStorage.getItem('satActividades') && localStorage.getItem('satProductos')) {
+    actividades = JSON.parse(localStorage.getItem('satActividades'));
+    productos   = JSON.parse(localStorage.getItem('satProductos'));
+    return;
+  }
+  const res = await fetch(CAT_URL_ACT);
+  const buffer = await res.arrayBuffer();
+  const zip = await JSZip.loadAsync(buffer);
+  // actividades
+  const csvAct = await zip.file(/ActividadEconomica/i)[0].async('string');
+  actividades = csvToObj(csvAct);
+  localStorage.setItem('satActividades', JSON.stringify(actividades));
+  // productos
+  const csvProd = await zip.file(/ClaveProdServ/i)[0].async('string');
+  productos   = csvToObj(csvProd);
+  localStorage.setItem('satProductos', JSON.stringify(productos));
+}
+function csvToObj(text){
+  const [header, ...lines] = text.trim().split('\n').map(r=>r.split(',').map(c=>c.replace(/^"|"$/g,'')));
+  return lines.map(r=>Object.fromEntries(header.map((h,i)=>[h, r[i]])));
+}
+
+/* ==========  INICIA TABLAS  ========== */
+$(async ()=>{
+  await descargaZIP();
+  loadEmpresas();
+  initTables();
+  bindEvents();
+});
+
+function initTables(){
+  window.actTable = $('#tblActividades').DataTable({paging:false, autoWidth:false, data:actividades, columns:[
+    {data:'clave'}, {data:'descripcion'},
+    {data:null, orderable:false, render: d=>`<input type="checkbox" class="selAct" value="${d.clave}">`}
+  ], language:{search:""}});
+  window.prodTable= $('#tblProductos').DataTable({paging:false, autoWidth:false, data:[], columns:[
+    {data:'clave'}, {data:'descripcion'},
+    {data:null, render: d=>`<input type="number" class="form-control form-control-sm montos" data-clave="${d.clave}" placeholder="0.00" step="0.01">`},
+    {data:null, orderable:false, render:()=>`<button class="btn btn-sm btn-danger delProd">X</button>`}
+  ], language:{search:""}});
+}
+function bindEvents(){
+  $('#buscaAct').on('keyup', ()=> actTable.search($('#buscaAct').val()).draw());
+  $('#buscaProd').on('keyup',()=> prodTable.search($('#buscaProd').val()).draw());
+  $('#checkAllAct').on('change', e=> $('.selAct').prop('checked',e.target.checked));
+  $('#rfc').on('blur', validaRFC);
+  $('#btnAddProd').on('click', addProduct);
+  $('#btnGuardar').on('click', guardarEmpresa);
+  $('#btnJson').on('click', descargarJSON);
+  $('#btnVer').on('click', mostrarEmpresas);
+  $('#btnReset').on('click', ()=>{localStorage.clear(); location.reload();});
+  $('#tblProductos tbody').on('click','.delProd', e=> prodTable.row($(e.target).parents('tr')).remove().draw());
+}
+function addProduct(){
+  const q = $('#buscaProd').val();
+  const filtrados = productos.filter(p=>p.descripcion.toLowerCase().includes(q.toLowerCase())).slice(0,50);
+  prodTable.rows.add(filtrados).draw();
+}
+function validaRFC(){
+  const rfc = $('#rfc').val().trim().toUpperCase();
+  if(rfc.length<12) return;
+  Promise.all([
+    fetch(`https://consultaqr.facturaelectronica.sat.gob.mx/ConsultaCFDIService.svc?re=${rfc}&rr=AAA010101AAA&tt=0&id=0`).then(r=>r.status===200),
+    fetch('https://www.sat.gob.mx/cs/Satellite?blobcol=urldata&blobkey=id&blobtable=MungoBlobs&blobwhere=1461173680198&ssbinary=true').then(r=>r.text()).then(txt=>txt.includes(rfc))
+  ]).then(([ok, black])=>{
+    $('#rfcStatus').text(ok ? (black?'⚠️ En lista negra':'✅ Válido') : '❌ No encontrado');
+  });
+}
+
+/* ==========  CRUD LOCAL  ========== */
+function guardarEmpresa(){
+  const rfc = $('#rfc').val().trim().toUpperCase();
+  const razon = $('#razon').val().trim();
+  const actividades = $('.selAct:checked').map((i,c)=>c.value).get();
+  const productos = [];
+  $('.montos').each((i,inp)=>{
+    const v = parseFloat(inp.value);
+    if(v>0) productos.push({clave:inp.dataset.clave, monto:v});
+  });
+  if(!rfc||!razon||actividades.length===0||productos.length===0){alert('Completa todos los campos'); return;}
+  const idx = empresas.findIndex(e=>e.rfc===rfc);
+  const nueva = {rfc, razon, actividades, productos};
+  if(idx>=0) empresas[idx]=nueva; else empresas.push(nueva);
+  localStorage.setItem(LS_KEY_EMP, JSON.stringify(empresas));
+  alert('Empresa guardada en navegador');
+  location.reload();
+}
+function loadEmpresas(){
+  empresas = JSON.parse(localStorage.getItem(LS_KEY_EMP)||'[]');
+}
+function mostrarEmpresas(){
+  $('#jsonOut').val(JSON.stringify(empresas, null, 2));
+}
+
+/* ==========  GENERA JSON BRINDAJE  ========== */
+async function descargarJSON(){
+  const out = {empresas:[]};
+  for(const e of empresas){
+    const ok = await fetch(`https://consultaqr.facturaelectronica.sat.gob.mx/ConsultaCFDIService.svc?re=${e.rfc}&rr=AAA010101AAA&tt=0&id=0`).then(r=>r.status===200);
+    const black = await fetch('https://www.sat.gob.mx/cs/Satellite?blobcol=urldata&blobkey=id&blobtable=MungoBlobs&blobwhere=1461173680198&ssbinary=true').then(r=>r.text()).then(txt=>txt.includes(e.rfc));
+    out.empresas.push({
+      rfc: e.rfc,
+      razon_social: e.razon,
+      actividades: e.actividades,
+      productos_autorizados: e.productos.map(p=>{
+        const desc = productos.find(pr=>pr.clave===p.clave)?.descripcion||'';
+        return {clave:p.clave, descripcion:desc, monto_max:p.monto};
+      }),
+      rfc_valido: ok,
+      en_lista_negra: black
+    });
+  }
+  const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'brindaje_fiscal.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  $('#jsonOut').val(JSON.stringify(out, null, 2));
+}
+</script>
+<!-- JSZip para leer ZIP del SAT -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</body>
+</html>
